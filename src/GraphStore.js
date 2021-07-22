@@ -4,22 +4,21 @@ const Store = require('orbit-db-store')
 const GraphIndex = require('./GraphIndex')
 const algos = require('./utils/algos')
 
-function defaultEdgeId(source, target, id) {
-  return `${source}:${target}:${id}`;
+function defaultRelationshipId(source, type, id) {
+  return `${source}:${type}:${id}`;
 }
 
 class GraphStore extends Store {
 
   constructor(ipfs, id, dbname, options) {
-    let opts = Object.assign({}, { Index: GraphIndex })
-    Object.assign(opts, options)
+    const opts = { Index: GraphIndex, ...options }
+
     super(ipfs, id, dbname, opts)
+
     this._type = GraphStore.type;
 
-    if(options.addressIdentifier)
-      this.addressIdentifier = options.addressIdentifier
-    else
-      this.addressIdentifier = defaultEdgeId
+    this.addressIdentifier =  options.addressIdentifier
+                           || defaultRelationshipId
   }
 
   // All
@@ -27,7 +26,7 @@ class GraphStore extends Store {
     return this._index._vertexIndex
   }
 
-  allEdges () {
+  allRelationships () {
     return this._index._edgeIndex
   }
 
@@ -36,19 +35,53 @@ class GraphStore extends Store {
     return this._index.getVertex(key)
   }
 
-  getEdge (from, to) {
-    const key = this.edgeId(from, to)
-    return this._index.getEdge(key)
+  getVertexWithDescendents(key, type) {
+    const vertex = this._index.getVertex(key)
+    if(!vertex)
+      throw new Error('Vertex does not exist.')
+
+    const children = 
+            this.getRelationship(key, type)
+                .map(key => this.getVertexWithRelationship(key, type))
+
+    return { ...vertex, [type]: children }
+  }
+
+  getRelationship (from, type) {
+    const key = this.edgeId(from, type)
+    return this._index.getRelationship(key)
   }
 
   // Creation
-  createEdge (from, to, data) {
-    if(!(this.hasVertex(from) && this.hasVertex(to)))
-      throw new Error('Vertex does not exist!')
+  createRelationship (from, type, to) {
+    if(!(this.hasVertex(from) && this.hasVertex(type)))
+    throw new Error('Vertex does not exist!')
 
-    //TODO: Check for uniqueness
-    const key = this.edgeId(from, to);
-    return this.put(key, data, "ADD_EDGE")
+    function updateOrCreateRelationship(from, type, to) {
+      const key = this.edgeId(from, type);
+      const relationship = this.get(key)
+
+      if (relationship) {
+        if (relationship.includes(to)) {
+          throw new Error('Relationship already exists')
+        }
+
+        const data = [
+          ...relationship,
+          to
+        ]
+  
+        this.put(key, data, "UPDATE_RELATIONSHIP")
+      }
+      else {
+        const data = []  
+        this.put(key, data, "ADD_EDGE")
+      }
+    }
+
+    const inverseType = `${type}-inverse`
+    updateOrCreateRelationship(from, type, to)
+    updateOrCreateRelationship(to, inverseType, from)    
   }
 
   createVertex (key, data) {
@@ -63,14 +96,30 @@ class GraphStore extends Store {
     return this.del(key, "REMOVE_VERTEX")
   }
 
-  deleteEdge (from, to, data) {
+  removeRelationship (from, type, to) {
     // TODO: Check if Edge has connecting nodes
-    const key = this._edgeId(from, to);
+    const key = this._edgeId(from, type);
 
-    if (!this.hasEdge(key))
-      throw new Error(`No entry with key '${key}' in the database`)
+    function remove(from, type, to) {
+      const relationship = this.get(key)
 
-    return this.del(key, "REMOVE_EDGE")
+      if (!relationship)
+        throw new Error(`No entry with key '${key}' in the database`)
+
+      const data = relationship.filter(vertexKey => vertexKey !== to)
+
+      if (data.length !== 0) {
+      return this.put(key, data, "UPDATE_RELATIONSHIP")
+      }
+      else {
+        return this.del(key, "REMOVE_EDGE")
+      }
+    }
+
+    const inverseType = `${type}-inverse`
+
+    remove(from, type, to)
+    remove(to, inverseType, to)
   }
 
   // Updates
@@ -78,8 +127,8 @@ class GraphStore extends Store {
     return this.put(key, data, "UPDATE_VERTEX")
   }
 
-  updateEdge(from, to, data){
-    return this.put(key, data, "UPDATE_EDGE")
+  updateRelationship(from, to, data){
+    return this.put(key, data, "UPDATE_RELATIONSHIP")
   }
 
   // Checks
@@ -87,9 +136,9 @@ class GraphStore extends Store {
     return this._index.getVertex(key) != null
   }
 
-  hasEdge(from, to){
+  hasRelationship(from, to){
     const key = this.edgeId(from, to);
-    return this._index.getEdge(key) != null
+    return this._index.getRelationship(key) != null
   }
 
   edgeId(source, target, id){
@@ -97,15 +146,22 @@ class GraphStore extends Store {
   }
 
   // TODO: Optimize?
-  getChildren(key){
-    return Object.keys(this.allEdges()).map(e => { 
-      if(e.split(':')[0] == key) {
-        return e.split(':')[1]
-      }
-    }).filter(c => c != null)
+  getChildren(from, type){
+    const key = this.edgeId(from, type)
+    const relationship = this.index.get(key)
+
+    return relationship
   }
 
-  // Uninformed Search using BFS
+  getParents(to, type){
+    const inverseType = `${type}-inverse`
+    const key = this.edgeId(to, inverseType)
+    const relationship = this.index.get(key)
+
+    return relationship
+  }
+
+    // Uninformed Search using BFS
   simplePath(from, to, cutoff = Infinity) {
     return algos.BFS(from, to, this, cutoff);
   }
