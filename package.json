@@ -15,9 +15,9 @@
   "license": "MIT",
   "dependencies": {
     "babel-preset-env": "^1.7.0",
-    "ipfs": "^0.33.1",
-    "orbit-db": "^0.19.9",
-    "orbit-db-store": "^2.5.3"
+    "ipfs": "7.7.6",
+    "orbit-db": "^7.7.6",
+    "orbit-db-store": "^7.7.6"
   },
   "devDependencies": {
     "chai": "^4.2.0",

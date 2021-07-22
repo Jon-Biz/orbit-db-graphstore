@@ -136,16 +136,17 @@ class GraphStore extends Store {
     return this._index.getVertex(key) != null
   }
 
-  hasRelationship(from, to){
-    const key = this.edgeId(from, to);
-    return this._index.getRelationship(key) != null
+  hasRelationship(from, type, to){
+    const key = this.edgeId(from, type)
+    const relationship = this.get(key)
+
+    return relationship.includes(to)
   }
 
   edgeId(source, target, id){
     return this.addressIdentifier(source, target, id);
   }
 
-  // TODO: Optimize?
   getChildren(from, type){
     const key = this.edgeId(from, type)
     const relationship = this.index.get(key)
@@ -161,14 +162,14 @@ class GraphStore extends Store {
     return relationship
   }
 
-    // Uninformed Search using BFS
-  simplePath(from, to, cutoff = Infinity) {
-    return algos.BFS(from, to, this, cutoff);
-  }
+  //   // Uninformed Search using BFS
+  // simplePath(from, to, cutoff = Infinity) {
+  //   return algos.BFS(from, to, this, cutoff);
+  // }
 
-  unInformedPath(from, to, cutoff = Infinity) {
-    return algos.biDirectionalSearch(from, to, this, cutoff)
-  }
+  // unInformedPath(from, to, cutoff = Infinity) {
+  //   return algos.biDirectionalSearch(from, to, this, cutoff)
+  // }
 
   //TODO: A* or other?
   // informedPath(from, to, cutoff = Infinity){
